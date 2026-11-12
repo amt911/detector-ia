@@ -35,7 +35,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-`bitsandbytes` solo hace falta para cargar los modelos en 4 u 8 bits en la GPU. En la CPU los modelos se cargan siempre sin cuantizar. `pypdf` solo hace falta para leer PDF.
+`bitsandbytes` solo hace falta para cargar los modelos en 4 u 8 bits en la GPU. En la CPU los modelos se cargan siempre sin cuantizar. `pypdf` solo hace falta para leer PDF. `weasyprint` solo hace falta para `--pdf`; además necesita Pango instalado en el sistema, que la mayoría de escritorios Linux ya traen.
 
 ## Archivos admitidos
 
@@ -54,6 +54,7 @@ Cualquier otra extensión se lee como texto plano. En los PDF, comprueba que los
 python detector_ia.py modelos                         # lista los modelos disponibles
 python detector_ia.py analizar mi_texto.txt           # crea informes/informe_mi_texto.html
 python detector_ia.py analizar a.txt b.txt --json     # varios archivos y, además, los datos en JSON
+python detector_ia.py analizar mi_texto.txt --pdf      # crea además informes/informe_mi_texto.pdf
 python detector_ia.py analizar trabajo.pdf apuntes.ipynb memoria.docx
 ```
 
@@ -82,6 +83,7 @@ La primera vez se descargan de Hugging Face todos los modelos que uses. Con los 
 | `--salida` | analizar / calibrar | `informes/` / `calibracion.json` | Carpeta de los informes o archivo de la calibración |
 | `--top` | analizar | `6` | Número de fragmentos sospechosos que se destacan |
 | `--json` | analizar | desactivado | Guarda también las puntuaciones en un JSON junto al informe |
+| `--pdf` | analizar | desactivado | Guarda también el informe en PDF (A4), junto al HTML. Necesita `weasyprint`. |
 
 ## Uso de GPU y RAM
 
@@ -104,6 +106,8 @@ Los modelos cuantizados (`--quant 4bit/8bit`, o los de 3B o más con `auto`) van
 - Los **fragmentos más sospechosos**, cada uno citado y con el motivo en lenguaje normal. Por ejemplo: «el 88 % de los tokens estaban entre los 10 más probables».
 - El **texto completo coloreado por fragmentos**, de verde (pocas señales de IA) a rojo (muchas).
 - El **texto completo coloreado palabra a palabra, al estilo GLTR**, con un selector para elegir el modelo.
+
+En el PDF, la vista palabra a palabra sale para todos los modelos, uno detrás de otro, porque el selector solo funciona en el HTML. Con textos largos, el PDF puede tener decenas de páginas y tardar un rato en generarse.
 
 ## Calibración (muy recomendable)
 
