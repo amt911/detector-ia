@@ -137,4 +137,4 @@ Use the same `--modelos` and `--quant` for analysis that you used for calibratio
 - Paraphrasing or light editing fools them easily.
 - They penalise very formal or technical writing, text built from set phrases, and well-known texts that models have memorised, such as quotes or laws.
 - Below about 200 words, reliability drops sharply.
-- The script has only been tested end to end with the small `qwen2.5-0.5b` pair, on a CPU, with two sample texts. It has not been tested with the default models or on a GPU yet.
+- Tested end to end with the default models on a 12 GB GPU (RTX 3080 Ti) shared with other programs, on a Spanish notebook of about 17,000 tokens, with part of salamandra-2b offloaded to RAM. It has also been run with the small `qwen2.5-0.5b` pair on a CPU. The 4/8-bit paths and `calibrar` have not been tried on real data yet.
