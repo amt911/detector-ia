@@ -89,7 +89,7 @@ Los dos modelos de un par tienen que estar cargados a la vez, porque cada métri
 
 Los modelos sin cuantizar (lo normal en los de menos de 3B) se colocan solos:
 
-1. En la GPU va todo lo que quepa. Se deja libre el espacio que necesita el propio cálculo.
+1. En la GPU va todo lo que quepa. Se deja libre el espacio que necesita el propio cálculo. El modelo base puede quedarse como mucho la mitad de la VRAM libre, para que al instruct también le toque una parte. Un modelo sin ninguna parte en la GPU se calcularía en la CPU, que es muy lento; si pasa, la consola te avisa.
 2. Lo que no quepa va a la RAM en bf16, hasta `--max-ram` GiB. Por defecto es el 40 % de la RAM disponible al empezar.
 3. Lo que pase de ahí va a una carpeta temporal en disco, que se borra al terminar.
 

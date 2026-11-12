@@ -91,7 +91,7 @@ The two models of a pair must be loaded at the same time, because every metric c
 
 Unquantized models (the default for models under 3B) are placed automatically:
 
-1. As much as fits goes in the GPU. Room is left free for the computation itself.
+1. As much as fits goes in the GPU. Room is left free for the computation itself. The base model may take at most half of the free VRAM, so the instruct model also gets a share. A model with no part in the GPU would be computed on the CPU, which is very slow; if that happens, the console warns you.
 2. What does not fit goes to RAM in bf16, up to `--max-ram` GiB. By default that is 40 % of the RAM available when the run starts.
 3. Anything beyond that goes to a temporary folder on disk, which is deleted afterwards.
 

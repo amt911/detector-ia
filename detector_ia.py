@@ -226,17 +226,24 @@ def cargar_par(clave, args, device):
         reserva = _reserva_vram(AutoConfig.from_pretrained(base), args.ventana)
         ram_tope = args.max_ram * GiB if args.max_ram is not None else 0.4 * (_ram_disponible() or 8 * GiB)
         offload_dir = tempfile.TemporaryDirectory(prefix="detector_ia_offload_")
+        # El base se queda como mucho la mitad de la VRAM útil y el instruct, lo que quede. Si el base
+        # se la quedara toda, el instruct acabaría entero en RAM/disco, y accelerate calcularía ese
+        # modelo en la CPU (muy lento) en vez de subir sus capas a la GPU.
+        util = torch.cuda.mem_get_info()[0] - reserva
         modelos = []
-        for nombre in (base, inst):
-            libre, _ = torch.cuda.mem_get_info()
+        for k, nombre in enumerate((base, inst)):
+            gpu = util / 2 if k == 0 else torch.cuda.mem_get_info()[0] - reserva
             mm = {"cpu": max(0, int(ram_tope))}
-            if libre - reserva > GiB // 4:
-                mm[0] = int(libre - reserva)
+            if gpu > GiB // 4:
+                mm[0] = int(gpu)
             m = AutoModelForCausalLM.from_pretrained(nombre, device_map="auto", max_memory=mm,
                                                      offload_folder=offload_dir.name, **kw).eval()
             en_ram, en_disco = _bytes_en(m, ("cpu",)), _bytes_en(m, ("disk",))
             ram_tope -= en_ram
-            if en_ram or en_disco:
+            if _dispositivo(m, device) == "cpu":
+                print(f"  ! {nombre}: no queda VRAM libre para él; se calculará en la CPU y será MUY lento. "
+                      f"Libera VRAM o usa --quant 8bit.")
+            elif en_ram or en_disco:
                 print(f"  {nombre}: no cabe entero en la GPU; {en_ram / GiB:.1f} GiB en RAM, "
                       f"{en_disco / GiB:.1f} GiB en disco (más lento, mismo resultado)")
             modelos.append(m)
