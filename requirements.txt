@@ -1,0 +1,4 @@
+torch
+transformers
+accelerate
+bitsandbytes  # only needed for 4/8-bit quantization on GPU / solo para cuantizar en GPU
