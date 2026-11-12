@@ -141,13 +141,58 @@ def resolver_modelo(clave):
              f"(o usa un par personalizado «org/base+org/instruct»)")
 
 
-def cargar_par(clave, quant, device):
+GiB = 1024 ** 3
+TROZO_FILAS = 64  # filas de logits que se pasan a float32 a la vez (limita el pico de memoria)
+
+
+def _ram_disponible():
+    try:
+        with open("/proc/meminfo") as f:
+            for linea in f:
+                if linea.startswith("MemAvailable:"):
+                    return int(linea.split()[1]) * 1024
+    except OSError:
+        pass
+    return None
+
+
+def _reserva_vram(cfg, ventana):
+    """VRAM que se deja libre para calcular: logits bf16 de los dos modelos, el trozo en float32
+    del post-proceso, la capa más grande (embeddings/lm_head), que accelerate sube desde la RAM
+    si está descargada, y un margen."""
+    cfg = getattr(cfg, "text_config", None) or cfg
+    vocab = getattr(cfg, "vocab_size", None) or 152000
+    hidden = getattr(cfg, "hidden_size", None) or 4096
+    return 2 * ventana * vocab * 2 + TROZO_FILAS * vocab * 4 * 8 + vocab * hidden * 2 + GiB // 2
+
+
+def _bytes_en(m, sitios):
+    """Bytes de pesos que accelerate ha colocado en `sitios` ("cpu", "disk")."""
+    total = 0
+    for nombre, d in (getattr(m, "hf_device_map", None) or {}).items():
+        if d in sitios:
+            mod = m.get_submodule(nombre) if nombre else m
+            total += sum(p.numel() * p.element_size() for p in mod.parameters())
+    return total
+
+
+def _dispositivo(m, device):
+    """Dónde hay que mandar la entrada: la GPU salvo que el modelo entero esté en RAM/disco."""
+    mapa = getattr(m, "hf_device_map", None)
+    if device == "cuda" and mapa and all(d in ("cpu", "disk") for d in mapa.values()):
+        return "cpu"
+    return device
+
+
+def cargar_par(clave, args, device):
+    import tempfile
+
     import torch
     import transformers
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
 
     base, inst, tam, _ = resolver_modelo(clave)
-    q = quant
+    q = args.quant
     if q == "auto":
         q = "4bit" if (tam or 0) >= 3 else "none"
     if device == "cpu" and q != "none":
@@ -164,16 +209,42 @@ def cargar_par(clave, quant, device):
             BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4",
                                bnb_4bit_compute_dtype=torch.bfloat16)
             if q == "4bit" else BitsAndBytesConfig(load_in_8bit=True))
-    if device == "cuda":
-        kw["device_map"] = {"": 0}
 
     print(f"→ Cargando {clave}: {base} + {inst} (cuantización: {q})")
     tok = AutoTokenizer.from_pretrained(base)
     if not tok.is_fast:
         sys.exit(f"El tokenizador de {base} no es «fast» (necesito offsets de caracteres).")
-    obs = AutoModelForCausalLM.from_pretrained(base, **kw).eval()
-    perf = AutoModelForCausalLM.from_pretrained(inst, **kw).eval()
-    return obs, perf, tok, {"clave": clave, "base": base, "instruct": inst, "quant": q}
+
+    offload_dir = None
+    if device == "cuda" and q != "none":
+        # bitsandbytes no admite bien la descarga a RAM: todo en la GPU, como antes
+        kw["device_map"] = {"": 0}
+        modelos = [AutoModelForCausalLM.from_pretrained(n, **kw).eval() for n in (base, inst)]
+    elif device == "cuda":
+        # bf16 sin cuantizar: lo que no quepa en la GPU va a la RAM (hasta --max-ram) y el resto a disco.
+        # accelerate sube cada capa a la GPU cuando le toca, así que se sigue calculando en la GPU.
+        reserva = _reserva_vram(AutoConfig.from_pretrained(base), args.ventana)
+        ram_tope = args.max_ram * GiB if args.max_ram is not None else 0.4 * (_ram_disponible() or 8 * GiB)
+        offload_dir = tempfile.TemporaryDirectory(prefix="detector_ia_offload_")
+        modelos = []
+        for nombre in (base, inst):
+            libre, _ = torch.cuda.mem_get_info()
+            mm = {"cpu": max(0, int(ram_tope))}
+            if libre - reserva > GiB // 4:
+                mm[0] = int(libre - reserva)
+            m = AutoModelForCausalLM.from_pretrained(nombre, device_map="auto", max_memory=mm,
+                                                     offload_folder=offload_dir.name, **kw).eval()
+            en_ram, en_disco = _bytes_en(m, ("cpu",)), _bytes_en(m, ("disk",))
+            ram_tope -= en_ram
+            if en_ram or en_disco:
+                print(f"  {nombre}: no cabe entero en la GPU; {en_ram / GiB:.1f} GiB en RAM, "
+                      f"{en_disco / GiB:.1f} GiB en disco (más lento, mismo resultado)")
+            modelos.append(m)
+    else:
+        modelos = [AutoModelForCausalLM.from_pretrained(n, **kw).eval() for n in (base, inst)]
+
+    obs, perf = modelos
+    return obs, perf, tok, {"clave": clave, "base": base, "instruct": inst, "quant": q}, offload_dir
 
 
 def stats_por_token(obs, perf, ids, device, ventana=384, contexto=128):
@@ -182,6 +253,7 @@ def stats_por_token(obs, perf, ids, device, ventana=384, contexto=128):
        xent (entropía cruzada base→instruct), mu/var (media/varianza analíticas de Fast-DetectGPT)."""
     import torch
 
+    dev_obs, dev_perf = _dispositivo(obs, device), _dispositivo(perf, device)
     n = len(ids)
     claves = ("ll", "rank", "nll_perf", "xent", "mu", "var")
     st = {k: torch.zeros(n, dtype=torch.float32) for k in claves}
@@ -190,26 +262,31 @@ def stats_por_token(obs, perf, ids, device, ventana=384, contexto=128):
     while pos < n:
         fin = min(n, pos + ventana)
         ini = max(0, pos - contexto)
-        inp = ids_t[ini:fin].unsqueeze(0).to(device)
+        inp = ids_t[ini:fin].unsqueeze(0)
         with torch.inference_mode():
-            lo_all = obs(input_ids=inp).logits[0]
-            lp_all = perf(input_ids=inp).logits[0]
+            lo_all = obs(input_ids=inp.to(dev_obs)).logits[0]
+            lp_all = perf(input_ids=inp.to(dev_perf)).logits[0].to(lo_all.device)
             V = min(lo_all.shape[-1], lp_all.shape[-1])
             a, b = pos - ini - 1, fin - ini - 1  # logits en a..b-1 predicen tokens pos..fin-1
-            lo = torch.log_softmax(lo_all[a:b, :V].float(), -1)
-            lp = torch.log_softmax(lp_all[a:b, :V].float(), -1)
+            tgt_all = inp[0, a + 1:b + 1].to(lo_all.device)
+            # por trozos de filas: pasar a float32 la ventana entera dispara la memoria con vocabularios grandes
+            for c0 in range(a, b, TROZO_FILAS):
+                c1 = min(b, c0 + TROZO_FILAS)
+                lo = torch.log_softmax(lo_all[c0:c1, :V].float(), -1)
+                lp = torch.log_softmax(lp_all[c0:c1, :V].float(), -1)
+                tgt = tgt_all[c0 - a:c1 - a].unsqueeze(-1)
+                ll = lo.gather(-1, tgt).squeeze(-1)
+                rank = (lo > ll.unsqueeze(-1)).sum(-1) + 1
+                nll_perf = -lp.gather(-1, tgt).squeeze(-1)
+                xent = -(lo.exp() * lp).sum(-1)                 # Binoculars: H(p_base, q_instruct)
+                pp = lp.exp()                                    # Fast-DetectGPT: muestreo = instruct,
+                mu = (pp * lo).sum(-1)                           #                 puntuación = base
+                var = ((pp * lo.square()).sum(-1) - mu.square()).clamp_min(0)
+                d0, d1 = pos + (c0 - a), pos + (c1 - a)
+                for k, v in zip(claves, (ll, rank.float(), nll_perf, xent, mu, var)):
+                    st[k][d0:d1] = v.float().cpu()
+                del lo, lp, pp
             del lo_all, lp_all
-            tgt = inp[0, a + 1:b + 1].unsqueeze(-1)
-            ll = lo.gather(-1, tgt).squeeze(-1)
-            rank = (lo > ll.unsqueeze(-1)).sum(-1) + 1
-            nll_perf = -lp.gather(-1, tgt).squeeze(-1)
-            xent = -(lo.exp() * lp).sum(-1)                 # Binoculars: H(p_base, q_instruct)
-            pp = lp.exp()                                    # Fast-DetectGPT: muestreo = instruct,
-            mu = (pp * lo).sum(-1)                           #                 puntuación = base
-            var = ((pp * lo.square()).sum(-1) - mu.square()).clamp_min(0)
-            for k, v in zip(claves, (ll, rank.float(), nll_perf, xent, mu, var)):
-                st[k][pos:fin] = v.float().cpu()
-            del lo, lp, pp
         pos = fin
     return st
 
@@ -238,7 +315,7 @@ def analizar_textos(textos, claves, args):
     res = [{"segmentos": segmentar(t, args.min_palabras), "modelos": {}} for t in textos]
 
     for clave in claves:
-        obs, perf, tok, info = cargar_par(clave, args.quant, device)
+        obs, perf, tok, info, offload_dir = cargar_par(clave, args, device)
         for i, texto in enumerate(textos):
             enc = tok(texto, return_offsets_mapping=True, add_special_tokens=True)
             ids = list(enc["input_ids"])
@@ -264,6 +341,8 @@ def analizar_textos(textos, claves, args):
             print(f"  {clave}: texto {i + 1}/{len(textos)} ({len(validos)} tokens)")
         del obs, perf
         gc.collect()
+        if offload_dir is not None:
+            offload_dir.cleanup()
         if device == "cuda":
             torch.cuda.empty_cache()
     return res
@@ -733,6 +812,9 @@ def main():
                        help="auto = 4 bits para modelos ≥3B, sin cuantizar los pequeños")
         p.add_argument("--min-palabras", type=int, default=50, help="tamaño mínimo de cada fragmento (def.: 50)")
         p.add_argument("--ventana", type=int, default=384, help="tokens por pasada; bájalo si te quedas sin VRAM")
+        p.add_argument("--max-ram", type=float, default=None, metavar="GiB",
+                       help="RAM máxima para los pesos que no quepan en la GPU; lo que sobre va a disco "
+                            "(def.: 40 %% de la RAM disponible)")
 
     pa = sub.add_parser("analizar", help="analiza uno o varios archivos (.txt, .md, .pdf, .ipynb, .docx) y genera informes HTML")
     pa.add_argument("archivos", nargs="+")
