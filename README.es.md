@@ -35,7 +35,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-`bitsandbytes` solo hace falta para cargar los modelos en 4 u 8 bits en la GPU. En la CPU los modelos se cargan siempre sin cuantizar. `pypdf` solo hace falta para leer PDF. `weasyprint` solo hace falta para `--pdf`; además necesita Pango instalado en el sistema, que la mayoría de escritorios Linux ya traen.
+`bitsandbytes` solo hace falta para cargar los modelos en 4 u 8 bits en la GPU. En la CPU los modelos se cargan siempre sin cuantizar. `pypdf` solo hace falta para leer PDF cuando no está instalado `pdftotext` (Poppler); `pdftotext` separa mejor las palabras, así que es preferible. `weasyprint` solo hace falta para `--pdf`; además necesita Pango instalado en el sistema, que la mayoría de escritorios Linux ya traen.
 
 ## Archivos admitidos
 
@@ -43,7 +43,7 @@ pip install -r requirements.txt
 |---|---|
 | `.txt` | El archivo entero, leído como UTF-8 |
 | `.md` | El archivo entero, sin la sintaxis de markdown (ver abajo) |
-| `.pdf` | La capa de texto de cada página. Las palabras cortadas con guion al final de línea se vuelven a unir. Los PDF escaneados no tienen capa de texto y se rechazan, porque no hay OCR. |
+| `.pdf` | La capa de texto de cada página, leída con `pdftotext` (Poppler) si está instalado, o con `pypdf` si no. Las letras acentuadas que los PDF de LaTeX dejan partidas (`Adem´ as`, `a˜ nadir`) se recomponen, y las palabras cortadas con guion al final de línea se vuelven a unir. Los PDF escaneados no tienen capa de texto y se rechazan, porque no hay OCR. |
 | `.ipynb` | Solo las celdas markdown, sin la sintaxis de markdown. El código y las salidas se ignoran porque no son prosa. |
 | `.docx` | El texto de cada párrafo. Cada párrafo de Word cuenta como un párrafo al dividir en fragmentos. |
 

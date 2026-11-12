@@ -37,7 +37,9 @@ import html
 import json
 import math
 import re
+import shutil
 import statistics
+import subprocess
 import sys
 from pathlib import Path
 
@@ -669,13 +671,41 @@ def ajustar_umbral(h, a):
 EXTENSIONES = (".txt", ".md", ".pdf", ".ipynb", ".docx")
 
 
+_ACENTO = {"´": "\u0301", "`": "\u0300", "˜": "\u0303", "¨": "\u0308", "ˆ": "\u0302"}
+_TILDE_SUELTA = re.compile(r"([´`˜¨ˆ])[ \n]?([A-Za-zıȷ])")
+_SIN_PUNTO = re.compile(r"[ıȷ](?=[\u0300-\u036f])")
+
+
+def arreglar_tildes(texto):
+    """Recompone las letras acentuadas que los PDF de LaTeX dejan partidas: «Adem´ as» → «Además»,
+    «a˜ nadir» → «añadir», «serı́an» → «serían». Sin esto, las tildes rotas hacen que el texto
+    parezca muy impredecible y falsean las métricas."""
+    import unicodedata
+
+    def unir(m):
+        letra = {"ı": "i", "ȷ": "j"}.get(m.group(2), m.group(2))
+        return letra + _ACENTO[m.group(1)]
+
+    texto = _TILDE_SUELTA.sub(unir, texto)
+    texto = _SIN_PUNTO.sub(lambda m: "i" if m.group() == "ı" else "j", texto)
+    return unicodedata.normalize("NFC", texto)
+
+
 def _leer_pdf(p):
-    try:
-        from pypdf import PdfReader
-    except ImportError:
-        sys.exit("Para leer PDF necesito pypdf:  pip install pypdf")
-    paginas = [(pag.extract_text() or "").strip() for pag in PdfReader(str(p)).pages]
-    texto = "\n\n".join(t for t in paginas if t)
+    texto = None
+    if shutil.which("pdftotext"):  # poppler: separa mejor las palabras que pypdf
+        r = subprocess.run(["pdftotext", "-q", "-enc", "UTF-8", str(p), "-"], capture_output=True)
+        if r.returncode == 0:
+            paginas = r.stdout.decode("utf-8", errors="replace").split("\f")
+            texto = "\n\n".join(t.strip() for t in paginas if t.strip())
+    if texto is None:
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            sys.exit("Para leer PDF necesito pdftotext (poppler) o pypdf:  pip install pypdf")
+        paginas = [(pag.extract_text() or "").strip() for pag in PdfReader(str(p)).pages]
+        texto = "\n\n".join(t for t in paginas if t)
+    texto = arreglar_tildes(texto)
     return re.sub(r"(\w)-\n(\w)", r"\1\2", texto)  # une palabras cortadas con guion al final de línea
 
 
