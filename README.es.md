@@ -78,11 +78,26 @@ La primera vez se descargan de Hugging Face todos los modelos que uses. Con los 
 | `--quant` | analizar, calibrar | `auto` | `auto`, `none`, `8bit` o `4bit`. Con `auto`, los modelos de 3B o más se cargan en 4 bits. |
 | `--min-palabras` | analizar, calibrar | `50` | Tamaño mínimo de cada fragmento, en palabras |
 | `--ventana` | analizar, calibrar | `384` | Tokens por pasada. Bájalo a 256 si te quedas sin VRAM. |
+| `--max-ram` | analizar, calibrar | 40 % de la RAM disponible | GiB de RAM para los pesos que no quepan en la GPU. Lo que sobre va a disco. |
 | `--calibracion` | analizar | — | El JSON que genera `calibrar` |
 | `--salida` | analizar / calibrar | `informes/` / `calibracion.json` | Carpeta de los informes o archivo de la calibración |
 | `--top` | analizar | `6` | Número de fragmentos sospechosos que se destacan |
 | `--json` | analizar | desactivado | Guarda también las puntuaciones en un JSON junto al informe |
 | `--pdf` | analizar | desactivado | Guarda también el informe en PDF (A4), junto al HTML. Necesita `weasyprint`. |
+
+## Uso de GPU y RAM
+
+Los dos modelos de un par tienen que estar cargados a la vez, porque cada métrica compara sus predicciones token a token. Los pares se cargan uno detrás de otro, y cada par se libera antes de cargar el siguiente.
+
+Los modelos sin cuantizar (lo normal en los de menos de 3B) se colocan solos:
+
+1. En la GPU va todo lo que quepa. Se deja libre el espacio que necesita el propio cálculo. El modelo base puede quedarse como mucho la mitad de la VRAM libre, para que al instruct también le toque una parte. Un modelo sin ninguna parte en la GPU se calcularía en la CPU, que es muy lento; si pasa, la consola te avisa.
+2. Lo que no quepa va a la RAM en bf16, hasta `--max-ram` GiB. Por defecto es el 40 % de la RAM disponible al empezar.
+3. Lo que pase de ahí va a una carpeta temporal en disco, que se borra al terminar.
+
+El cálculo se sigue haciendo en la GPU: cada capa se copia a ella cuando le toca. Va más lento, pero el resultado es el mismo, así que una calibración sigue valiendo. En la consola verás cuánto de cada modelo ha ido a RAM o a disco.
+
+Los modelos cuantizados (`--quant 4bit/8bit`, o los de 3B o más con `auto`) van siempre enteros en la GPU. Si alguno no cabe, usa un modelo más pequeño o libera VRAM.
 
 ## Qué trae el informe
 

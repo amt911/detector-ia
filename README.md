@@ -80,11 +80,26 @@ The `llama3.2-3b` and `gemma2-2b` presets are gated. To use them, accept their l
 | `--quant` | analizar, calibrar | `auto` | `auto`, `none`, `8bit` or `4bit`. `auto` loads models of 3B or more in 4 bits. |
 | `--min-palabras` | analizar, calibrar | `50` | Minimum size of each passage, in words |
 | `--ventana` | analizar, calibrar | `384` | Tokens per forward pass. Lower it to 256 if you run out of VRAM. |
+| `--max-ram` | analizar, calibrar | 40 % of available RAM | GiB of RAM for model weights that do not fit in the GPU. Anything beyond goes to disk. |
 | `--calibracion` | analizar | — | Calibration JSON produced by `calibrar` |
 | `--salida` | analizar / calibrar | `informes/` / `calibracion.json` | Output folder for reports, or output file for the calibration |
 | `--top` | analizar | `6` | Number of suspicious passages to highlight |
 | `--json` | analizar | off | Also save the scores as JSON next to the report |
 | `--pdf` | analizar | off | Also save the report as PDF (A4), next to the HTML. Needs `weasyprint`. |
+
+## GPU and RAM usage
+
+The two models of a pair must be loaded at the same time, because every metric compares their predictions token by token. Pairs are loaded one after another, and each pair is freed before the next one loads.
+
+Unquantized models (the default for models under 3B) are placed automatically:
+
+1. As much as fits goes in the GPU. Room is left free for the computation itself. The base model may take at most half of the free VRAM, so the instruct model also gets a share. A model with no part in the GPU would be computed on the CPU, which is very slow; if that happens, the console warns you.
+2. What does not fit goes to RAM in bf16, up to `--max-ram` GiB. By default that is 40 % of the RAM available when the run starts.
+3. Anything beyond that goes to a temporary folder on disk, which is deleted afterwards.
+
+The computation still runs on the GPU: each layer is copied to it when needed. This is slower, but the result is the same, so a calibration stays valid. The console shows how much of each model went to RAM or disk.
+
+Quantized models (`--quant 4bit/8bit`, or models of 3B or more with `auto`) always go entirely in the GPU. If one does not fit, use a smaller model or free VRAM.
 
 ## What the report shows
 
