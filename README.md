@@ -35,7 +35,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-`bitsandbytes` is only needed to load models in 4 or 8 bits on a GPU. On the CPU, models are always loaded without quantization. `pypdf` is only needed to read PDF files. `weasyprint` is only needed for `--pdf`; it also needs Pango installed on the system, which most Linux desktops already have.
+`bitsandbytes` is only needed to load models in 4 or 8 bits on a GPU. On the CPU, models are always loaded without quantization. `pypdf` is only needed to read PDF files when `pdftotext` (Poppler) is not installed; `pdftotext` separates words better, so prefer it. `weasyprint` is only needed for `--pdf`; it also needs Pango installed on the system, which most Linux desktops already have.
 
 ## Supported files
 
@@ -43,7 +43,7 @@ pip install -r requirements.txt
 |---|---|
 | `.txt` | The whole file, read as UTF-8 |
 | `.md` | The whole file, without markdown syntax (see below) |
-| `.pdf` | The text layer of every page. Words split with a hyphen at the end of a line are joined back together. Scanned PDFs have no text layer and are rejected, because there is no OCR. |
+| `.pdf` | The text layer of every page, read with `pdftotext` (Poppler) if it is installed, or with `pypdf` otherwise. Accented letters that LaTeX PDFs split in two (`Adem´ as`, `a˜ nadir`) are put back together, and words split with a hyphen at the end of a line are joined. Scanned PDFs have no text layer and are rejected, because there is no OCR. |
 | `.ipynb` | Only the markdown cells, without markdown syntax. Code and outputs are skipped because they are not prose. |
 | `.docx` | The text of every paragraph. Each Word paragraph becomes one paragraph for splitting. |
 
