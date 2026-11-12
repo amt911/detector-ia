@@ -24,7 +24,8 @@ Uso:
   python detector_ia.py analizar texto.txt [otro.txt ...] [--modelos a,b,c] [--calibracion calib.json]
   python detector_ia.py calibrar --humanos carpeta_humanos/ --ia carpeta_ia/ [--modelos a,b,c]
 
-Requisitos: pip install torch transformers accelerate   (+ bitsandbytes para 4/8 bits)
+Requisitos: pip install torch transformers accelerate   (+ bitsandbytes para 4/8 bits, + pypdf para PDF)
+Formatos: .txt, .md, .pdf, .ipynb (solo celdas markdown) y .docx
 """
 
 import argparse
@@ -573,14 +574,79 @@ def ajustar_umbral(h, a):
             "tpr": round(mejor[2], 3), "fpr": round(mejor[3], 3), "n_humano": len(h), "n_ia": len(a)}
 
 
+EXTENSIONES = (".txt", ".md", ".pdf", ".ipynb", ".docx")
+
+
+def _leer_pdf(p):
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        sys.exit("Para leer PDF necesito pypdf:  pip install pypdf")
+    paginas = [(pag.extract_text() or "").strip() for pag in PdfReader(str(p)).pages]
+    texto = "\n\n".join(t for t in paginas if t)
+    return re.sub(r"(\w)-\n(\w)", r"\1\2", texto)  # une palabras cortadas con guion al final de línea
+
+
+def _leer_ipynb(p):
+    """Solo las celdas markdown: el código y las salidas no son prosa."""
+    nb = json.loads(Path(p).read_text(encoding="utf-8"))
+    celdas = []
+    for c in nb.get("cells", []):
+        if c.get("cell_type") == "markdown":
+            src = c.get("source", "")
+            celdas.append(("".join(src) if isinstance(src, list) else src).strip())
+    return "\n\n".join(t for t in celdas if t)
+
+
+def _leer_docx(p):
+    """Texto de los párrafos de word/document.xml, sin dependencias externas."""
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    with zipfile.ZipFile(p) as z:
+        raiz = ET.fromstring(z.read("word/document.xml"))
+    parrafos = []
+    for par in raiz.iter(f"{w}p"):
+        trozos = []
+        for el in par.iter():
+            if el.tag == f"{w}t":
+                trozos.append(el.text or "")
+            elif el.tag == f"{w}tab":
+                trozos.append("\t")
+            elif el.tag in (f"{w}br", f"{w}cr"):
+                trozos.append("\n")
+        parrafos.append("".join(trozos))
+    # un párrafo de Word = un párrafo para la segmentación
+    return "\n\n".join(t.strip() for t in parrafos if t.strip())
+
+
 def _leer(p):
-    return Path(p).read_text(encoding="utf-8", errors="replace")
+    p = Path(p)
+    ext = p.suffix.lower()
+    try:
+        if ext == ".pdf":
+            texto = _leer_pdf(p)
+        elif ext == ".ipynb":
+            texto = _leer_ipynb(p)
+        elif ext == ".docx":
+            texto = _leer_docx(p)
+        else:
+            texto = p.read_text(encoding="utf-8", errors="replace")
+    except Exception as e:  # PDF dañado, JSON inválido, zip roto…
+        sys.exit(f"No he podido leer {p}: {e}")
+    if not texto.strip():
+        pista = " ¿Es un PDF escaneado? Necesitaría OCR." if ext == ".pdf" else ""
+        sys.exit(f"{p} no contiene texto que analizar.{pista}")
+    return texto
 
 
 def cmd_calibrar(args):
-    exts = ("*.txt", "*.md")
-    hum = sorted(p for e in exts for p in Path(args.humanos).glob(e))
-    ia = sorted(p for e in exts for p in Path(args.ia).glob(e))
+    def listar(carpeta):
+        return sorted(p for p in Path(carpeta).iterdir() if p.is_file() and p.suffix.lower() in EXTENSIONES)
+
+    hum = listar(args.humanos)
+    ia = listar(args.ia)
     if len(hum) < 5 or len(ia) < 5:
         sys.exit(f"Necesito al menos 5 textos en cada carpeta (hay {len(hum)} humanos y {len(ia)} de IA). "
                  f"Lo recomendable son 20+ de cada.")
@@ -668,7 +734,7 @@ def main():
         p.add_argument("--min-palabras", type=int, default=50, help="tamaño mínimo de cada fragmento (def.: 50)")
         p.add_argument("--ventana", type=int, default=384, help="tokens por pasada; bájalo si te quedas sin VRAM")
 
-    pa = sub.add_parser("analizar", help="analiza uno o varios .txt y genera informes HTML")
+    pa = sub.add_parser("analizar", help="analiza uno o varios archivos (.txt, .md, .pdf, .ipynb, .docx) y genera informes HTML")
     pa.add_argument("archivos", nargs="+")
     pa.add_argument("--calibracion", help="archivo JSON generado con `calibrar`")
     pa.add_argument("--salida", default="informes", help="carpeta de salida (def.: informes/)")
@@ -678,8 +744,8 @@ def main():
     pa.set_defaults(func=cmd_analizar)
 
     pc = sub.add_parser("calibrar", help="ajusta umbrales con textos humanos y de IA conocidos")
-    pc.add_argument("--humanos", required=True, help="carpeta con .txt escritos por ti (antes de 2023 mejor)")
-    pc.add_argument("--ia", required=True, help="carpeta con .txt generados por LLMs")
+    pc.add_argument("--humanos", required=True, help="carpeta con textos escritos por ti (antes de 2023 mejor)")
+    pc.add_argument("--ia", required=True, help="carpeta con textos generados por LLMs")
     pc.add_argument("--salida", default="calibracion.json")
     comunes(pc)
     pc.set_defaults(func=cmd_calibrar)

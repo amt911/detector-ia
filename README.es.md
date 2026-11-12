@@ -35,7 +35,18 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-`bitsandbytes` solo hace falta para cargar los modelos en 4 u 8 bits en la GPU. En la CPU los modelos se cargan siempre sin cuantizar.
+`bitsandbytes` solo hace falta para cargar los modelos en 4 u 8 bits en la GPU. En la CPU los modelos se cargan siempre sin cuantizar. `pypdf` solo hace falta para leer PDF.
+
+## Archivos admitidos
+
+| Formato | Qué se analiza |
+|---|---|
+| `.txt`, `.md` | El archivo entero, leído como UTF-8 |
+| `.pdf` | La capa de texto de cada página. Las palabras cortadas con guion al final de línea se vuelven a unir. Los PDF escaneados no tienen capa de texto y se rechazan, porque no hay OCR. |
+| `.ipynb` | Solo las celdas markdown. El código y las salidas se ignoran porque no son prosa. |
+| `.docx` | El texto de cada párrafo. Cada párrafo de Word cuenta como un párrafo al dividir en fragmentos. |
+
+Cualquier otra extensión se lee como texto plano. En los PDF, comprueba que los encabezados, los pies y los números de página no ocupen gran parte del texto, porque pueden falsear el resultado.
 
 ## Uso
 
@@ -43,6 +54,7 @@ pip install -r requirements.txt
 python detector_ia.py modelos                         # lista los modelos disponibles
 python detector_ia.py analizar mi_texto.txt           # crea informes/informe_mi_texto.html
 python detector_ia.py analizar a.txt b.txt --json     # varios archivos y, además, los datos en JSON
+python detector_ia.py analizar trabajo.pdf apuntes.ipynb memoria.docx
 ```
 
 Por defecto usa tres pares de familias distintas. Los carga uno detrás de otro para no pasarse de VRAM:
@@ -82,7 +94,7 @@ La primera vez se descargan de Hugging Face todos los modelos que uses. Con los 
 
 Sin calibrar, los umbrales son genéricos y el informe lo avisa en rojo. Calibrar cambia mucho el resultado. Para calibrar:
 
-1. Mete en `humanos/` 20 o más textos escritos por **ti**, mejor de antes de 2023, en `.txt` o `.md`. El mínimo son 5.
+1. Mete en `humanos/` 20 o más textos escritos por **ti**, mejor de antes de 2023, en cualquiera de los [formatos admitidos](#archivos-admitidos). El mínimo son 5.
 2. Mete en `ia/` otros 20 o más generados con ChatGPT, Claude, Gemini o similares, sobre temas parecidos.
 3. Ejecuta:
 
