@@ -41,10 +41,13 @@ pip install -r requirements.txt
 
 | Format | What is analysed |
 |---|---|
-| `.txt`, `.md` | The whole file, read as UTF-8 |
+| `.txt` | The whole file, read as UTF-8 |
+| `.md` | The whole file, without markdown syntax (see below) |
 | `.pdf` | The text layer of every page. Words split with a hyphen at the end of a line are joined back together. Scanned PDFs have no text layer and are rejected, because there is no OCR. |
-| `.ipynb` | Only the markdown cells. Code and outputs are skipped because they are not prose. |
+| `.ipynb` | Only the markdown cells, without markdown syntax. Code and outputs are skipped because they are not prose. |
 | `.docx` | The text of every paragraph. Each Word paragraph becomes one paragraph for splitting. |
+
+In `.md` files and notebooks, the markdown syntax is removed before analysis: heading marks, bold and italics, list bullets, links (their text is kept), images, HTML tags, tables (their cell text is kept), code blocks and LaTeX formulas. These marks are very predictable for the models and inflate the metrics, especially GLTR top-10. The text shown in the report is the cleaned one.
 
 Any other extension is read as plain text. For PDFs, check that headers, footers and page numbers do not take up a large part of the text, because they can skew the result.
 

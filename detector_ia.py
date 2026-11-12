@@ -26,6 +26,7 @@ Uso:
 
 Requisitos: pip install torch transformers accelerate   (+ bitsandbytes para 4/8 bits, + pypdf para PDF)
 Formatos: .txt, .md, .pdf, .ipynb (solo celdas markdown) y .docx
+(en .md e .ipynb se quita la sintaxis de markdown, el código y las fórmulas)
 """
 
 import argparse
@@ -712,6 +713,39 @@ def _leer_docx(p):
     return "\n\n".join(t.strip() for t in parrafos if t.strip())
 
 
+_MD = [  # (patrón, reemplazo), en este orden
+    (re.compile(r"^[ \t]*(```|~~~).*?^[ \t]*\1[^\n]*$", re.M | re.S), ""),  # bloques de código
+    (re.compile(r"\$\$.+?\$\$", re.S), ""),                                    # fórmulas en bloque
+    (re.compile(r"\$(?=\S)[^$\n]+?(?<=\S)\$"), ""),                            # fórmulas en línea
+    (re.compile(r"<!--.*?-->", re.S), ""),                                     # comentarios HTML
+    (re.compile(r"<[^>\n]+>"), ""),                                            # etiquetas HTML
+    (re.compile(r"!\[[^\]]*\]\([^)]*\)"), ""),                                 # imágenes
+    (re.compile(r"\[([^\]]+)\]\([^)]*\)"), r"\1"),                             # enlaces → su texto
+    (re.compile(r"^[ \t]*([-*_])[ \t]*(?:\1[ \t]*){2,}$", re.M), ""),          # líneas horizontales
+    (re.compile(r"^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(\|[ \t]*:?-{3,}:?[ \t]*)*\|?[ \t]*$", re.M), ""),  # separador de tabla
+    (re.compile(r"^[ \t]*#{1,6}[ \t]+", re.M), ""),                            # títulos
+    (re.compile(r"^[ \t]*>[ \t]?", re.M), ""),                                 # citas
+    (re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+", re.M), ""),                 # viñetas y listas numeradas
+    (re.compile(r"(\*\*|__)(?=\S)(.+?)(?<=\S)\1"), r"\2"),                     # **negrita**
+    (re.compile(r"(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])"), r"\1"),    # *cursiva*
+    (re.compile(r"(?<!\w)_(?=\S)([^_\n]+?)(?<=\S)_(?!\w)"), r"\1"),            # _cursiva_
+    (re.compile(r"~~(.+?)~~"), r"\1"),                                         # ~~tachado~~
+    (re.compile(r"`([^`\n]+)`"), r"\1"),                                       # `código en línea` → su texto
+    (re.compile(r"[ \t]*\|[ \t]*"), " "),                                      # celdas de tabla
+    (re.compile(r"[ \t]{2,}"), " "),                                           # espacios sobrantes
+    (re.compile(r"^[ \t]+|[ \t]+$", re.M), ""),
+    (re.compile(r"\n{3,}"), "\n\n"),
+]
+
+
+def limpiar_markdown(texto):
+    """Quita la sintaxis de markdown y deja solo la prosa. Las marcas (#, **, viñetas…) son muy
+    predecibles para los modelos e inflan las métricas; el código y las fórmulas no son prosa."""
+    for patron, rep in _MD:
+        texto = patron.sub(rep, texto)
+    return texto.strip()
+
+
 def _leer(p):
     p = Path(p)
     ext = p.suffix.lower()
@@ -726,6 +760,8 @@ def _leer(p):
             texto = p.read_text(encoding="utf-8", errors="replace")
     except Exception as e:  # PDF dañado, JSON inválido, zip roto…
         sys.exit(f"No he podido leer {p}: {e}")
+    if ext in (".md", ".ipynb"):
+        texto = limpiar_markdown(texto)
     if not texto.strip():
         pista = " ¿Es un PDF escaneado? Necesitaría OCR." if ext == ".pdf" else ""
         sys.exit(f"{p} no contiene texto que analizar.{pista}")

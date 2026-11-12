@@ -41,10 +41,13 @@ pip install -r requirements.txt
 
 | Formato | Qué se analiza |
 |---|---|
-| `.txt`, `.md` | El archivo entero, leído como UTF-8 |
+| `.txt` | El archivo entero, leído como UTF-8 |
+| `.md` | El archivo entero, sin la sintaxis de markdown (ver abajo) |
 | `.pdf` | La capa de texto de cada página. Las palabras cortadas con guion al final de línea se vuelven a unir. Los PDF escaneados no tienen capa de texto y se rechazan, porque no hay OCR. |
-| `.ipynb` | Solo las celdas markdown. El código y las salidas se ignoran porque no son prosa. |
+| `.ipynb` | Solo las celdas markdown, sin la sintaxis de markdown. El código y las salidas se ignoran porque no son prosa. |
 | `.docx` | El texto de cada párrafo. Cada párrafo de Word cuenta como un párrafo al dividir en fragmentos. |
+
+En los `.md` y en los notebooks, antes de analizar se quita la sintaxis de markdown: las marcas de título, la negrita y la cursiva, las viñetas, los enlaces (se queda su texto), las imágenes, las etiquetas HTML, las tablas (se queda el texto de las celdas), los bloques de código y las fórmulas LaTeX. Esas marcas son muy predecibles para los modelos e inflan las métricas, sobre todo GLTR top-10. El texto que sale en el informe es el ya limpio.
 
 Cualquier otra extensión se lee como texto plano. En los PDF, comprueba que los encabezados, los pies y los números de página no ocupen gran parte del texto, porque pueden falsear el resultado.
 
