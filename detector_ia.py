@@ -396,7 +396,11 @@ td.m{font-variant-numeric:tabular-nums}
 .ley span{display:inline-block;padding:0 8px;border-radius:4px;margin-right:6px;font-size:13px}
 select{font:inherit;padding:4px 8px;margin:4px 0 10px}
 details{background:#fff;border:1px solid var(--borde);border-radius:8px;padding:10px 14px;margin-top:10px}
-@media print{body{background:#fff}.gltr[hidden]{display:block!important}select{display:none}}
+.solo-print{display:none}
+@page{size:A4;margin:14mm 12mm}
+@media print{body{background:#fff;max-width:none;padding:0;font-size:12px}.gltr[hidden]{display:block!important}
+  select{display:none}.solo-print{display:block;font-size:14px;margin:14px 0 6px}
+  .card,.veredicto,tr{break-inside:avoid}h2{break-after:avoid}}
 """
 
 
@@ -483,7 +487,8 @@ def informe_html(nombre, texto, r, ev, calib, args):
 
     # Vista GLTR
     opciones = "".join(f"<option value='{i}'>{c}</option>" for i, c in enumerate(claves))
-    vistas = "".join(f"<div class='gltr' id='gltr-{i}' {'' if i == 0 else 'hidden'}>"
+    vistas = "".join(f"<h3 class='solo-print'>Modelo: {_esc(c)}</h3>"
+                     f"<div class='gltr' id='gltr-{i}' {'' if i == 0 else 'hidden'}>"
                      f"{html_gltr(texto, r['modelos'][c]['tokens'])}</div>" for i, c in enumerate(claves))
 
     modelos_txt = ", ".join(f"{c} ({r['modelos'][c]['info']['base']} + {r['modelos'][c]['info']['instruct']})"
@@ -689,6 +694,11 @@ def cmd_analizar(args):
         if calib.get("min_palabras") and calib["min_palabras"] != args.min_palabras:
             print(f"! La calibración usó --min-palabras {calib['min_palabras']}; uso ese valor.")
             args.min_palabras = calib["min_palabras"]
+    if args.pdf:
+        try:
+            import weasyprint  # noqa: F401
+        except (ImportError, OSError) as e:
+            sys.exit(f"Para --pdf necesito WeasyPrint (pip install weasyprint) y sus librerías del sistema: {e}")
     claves = [c.strip() for c in args.modelos.split(",") if c.strip()]
     rutas = [Path(p) for p in args.archivos]
     textos = [_leer(p) for p in rutas]
@@ -699,9 +709,16 @@ def cmd_analizar(args):
     for ruta, texto, r in zip(rutas, textos, res):
         ev = evaluar(r, calib)
         out = salida / f"informe_{ruta.stem}.html"
-        out.write_text(informe_html(ruta.name, texto, r, ev, calib, args), encoding="utf-8")
+        doc_html = informe_html(ruta.name, texto, r, ev, calib, args)
+        out.write_text(doc_html, encoding="utf-8")
         p = ev["doc"]["susp"]
         print(f"\n{ruta.name}: sospecha {'—' if p is None else f'{p:.0%}'} ({etiqueta(p)}) → {out}")
+        if args.pdf:
+            import weasyprint
+            out_pdf = out.with_suffix(".pdf")
+            print("   generando PDF (con textos largos tarda un rato)…")
+            weasyprint.HTML(string=doc_html).write_pdf(out_pdf)
+            print(f"   PDF → {out_pdf}")
         top = sorted([(e["susp"], i) for i, e in enumerate(ev["segs"]) if e["susp"] is not None], reverse=True)[:3]
         for s, i in top:
             frag = " ".join(texto[slice(*r["segmentos"][i])].split())[:90]
@@ -740,6 +757,7 @@ def main():
     pa.add_argument("--salida", default="informes", help="carpeta de salida (def.: informes/)")
     pa.add_argument("--top", type=int, default=6, help="nº de fragmentos sospechosos a destacar")
     pa.add_argument("--json", action="store_true", help="guarda también los datos en JSON")
+    pa.add_argument("--pdf", action="store_true", help="guarda también el informe en PDF (necesita weasyprint)")
     comunes(pa)
     pa.set_defaults(func=cmd_analizar)
 

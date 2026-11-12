@@ -35,7 +35,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-`bitsandbytes` is only needed to load models in 4 or 8 bits on a GPU. On the CPU, models are always loaded without quantization. `pypdf` is only needed to read PDF files.
+`bitsandbytes` is only needed to load models in 4 or 8 bits on a GPU. On the CPU, models are always loaded without quantization. `pypdf` is only needed to read PDF files. `weasyprint` is only needed for `--pdf`; it also needs Pango installed on the system, which most Linux desktops already have.
 
 ## Supported files
 
@@ -56,6 +56,7 @@ The commands and options are in Spanish: `analizar` means analyze, `calibrar` me
 python detector_ia.py modelos                       # list the available model presets
 python detector_ia.py analizar my_text.txt          # writes informes/informe_my_text.html
 python detector_ia.py analizar a.txt b.txt --json   # several files, plus the raw data as JSON
+python detector_ia.py analizar my_text.txt --pdf     # also writes informes/informe_my_text.pdf
 python detector_ia.py analizar essay.pdf notes.ipynb report.docx
 ```
 
@@ -83,6 +84,7 @@ The `llama3.2-3b` and `gemma2-2b` presets are gated. To use them, accept their l
 | `--salida` | analizar / calibrar | `informes/` / `calibracion.json` | Output folder for reports, or output file for the calibration |
 | `--top` | analizar | `6` | Number of suspicious passages to highlight |
 | `--json` | analizar | off | Also save the scores as JSON next to the report |
+| `--pdf` | analizar | off | Also save the report as PDF (A4), next to the HTML. Needs `weasyprint`. |
 
 ## What the report shows
 
@@ -92,7 +94,7 @@ The `llama3.2-3b` and `gemma2-2b` presets are gated. To use them, accept their l
 - The **full text, coloured by passage**, from green (few AI signals) to red (many).
 - The **full text coloured word by word, GLTR-style**, with a selector to pick the model.
 
-The report itself is written in Spanish.
+The report itself is written in Spanish. In the PDF, the word-by-word view is shown for every model, one after another, because the model selector only works in the HTML. With long texts, the PDF can run to dozens of pages and take a while to generate.
 
 ## Calibration (strongly recommended)
 
