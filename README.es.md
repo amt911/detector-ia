@@ -136,3 +136,7 @@ Analiza con los mismos `--modelos` y `--quant` con los que calibraste. Si no coi
 - Penalizan la escritura muy formal o técnica, los textos hechos con fórmulas fijas y los textos muy conocidos que los modelos han memorizado, como citas o leyes.
 - Con menos de unas 200 palabras, la fiabilidad cae mucho.
 - Probado de principio a fin con los modelos por defecto en una GPU de 12 GB (RTX 3080 Ti) compartida con otros programas, con un notebook en español de unos 17.000 tokens y parte de salamandra-2b descargada a RAM. También se ha ejecutado con el par pequeño `qwen2.5-0.5b` en CPU. La carga en 4/8 bits y `calibrar` todavía no se han probado con datos reales.
+
+## Licencia
+
+[MIT](LICENSE).
