@@ -132,7 +132,7 @@ Calibration prints the **AUC of every model and metric on your own texts**, so y
 
 Use the same `--modelos` and `--quant` for analysis that you used for calibration. The report warns you when they differ.
 
-If a calibrated signal comes out in the opposite direction to the theory (for example, "more predictable = more human"), `calibrar` warns in the console and the report shows a red warning. It almost always means the two groups of texts are not comparable. In the passages, each signal states which direction was used.
+If a calibrated signal comes out in the opposite direction to the theory (for example, "more predictable = more human"), `calibrar` warns in the console and the report shows a warning. It can mean the two groups of texts are not comparable, or it can be real: against recent large LLMs, your own writing may be more predictable to the detector's small models. To find out, analyse texts (human and AI) that were not used for calibration. In the passages, each signal states which direction was used.
 
 ## Limitations
 
@@ -140,7 +140,7 @@ If a calibrated signal comes out in the opposite direction to the theory (for ex
 - Paraphrasing or light editing fools them easily.
 - They penalise very formal or technical writing, text built from set phrases, and well-known texts that models have memorised, such as quotes or laws.
 - Below about 200 words, reliability drops sharply.
-- Tested end to end with the default models on a 12 GB GPU (RTX 3080 Ti) shared with other programs, on a Spanish notebook of about 17,000 tokens, with part of salamandra-2b offloaded to RAM. It has also been run with the small `qwen2.5-0.5b` pair on a CPU. The 4/8-bit paths have not been tried on real data yet. `calibrar` has been run with 28 human PDFs and 15 AI `.md` files, and it came out inverted because of the format difference, which is why the warning exists.
+- Tested end to end with the default models on a 12 GB GPU (RTX 3080 Ti) shared with other programs, on a Spanish notebook of about 17,000 tokens, with part of salamandra-2b offloaded to RAM. It has also been run with the small `qwen2.5-0.5b` pair on a CPU. The 4/8-bit paths have not been tried on real data yet. `calibrar` has been run with 28 human texts and 15 AI texts (from ChatGPT, Claude and Gemini), as PDFs with headers, tables of contents and code removed. All 18 signals came out inverted, with a document-level AUC of 0.92-0.97. In a separate test with 8 texts not used for calibration, no human text went above 50 % and 2 of the 3 AI texts were flagged. At passage level, the AUC stays at 0.6-0.7.
 - The parts that do not need models have tests: `python tests/test_detector.py` (or `python -m pytest tests`).
 
 ## License

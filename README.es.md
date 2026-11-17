@@ -130,7 +130,7 @@ La calibración te enseña el **AUC de cada modelo y métrica con tus propios te
 
 Analiza con los mismos `--modelos` y `--quant` con los que calibraste. Si no coinciden, el informe te avisa.
 
-Si una señal calibrada sale con la dirección contraria a la teoría (por ejemplo, «más predecible = más humano»), `calibrar` lo avisa en la consola y el informe muestra un aviso rojo. Casi siempre significa que los dos grupos de textos no son comparables. En los fragmentos, cada señal indica qué dirección se ha usado.
+Si una señal calibrada sale con la dirección contraria a la teoría (por ejemplo, «más predecible = más humano»), `calibrar` lo avisa en la consola y el informe muestra un aviso. Puede significar que los dos grupos de textos no son comparables, o ser real: con LLM grandes recientes, tu propia escritura puede ser más predecible para los modelos pequeños del detector. Para saberlo, analiza con esa calibración textos humanos y de IA que no hayas usado para calibrar. En los fragmentos, cada señal indica qué dirección se ha usado.
 
 ## Limitaciones
 
@@ -138,7 +138,7 @@ Si una señal calibrada sale con la dirección contraria a la teoría (por ejemp
 - Una paráfrasis o una edición ligera las engaña con facilidad.
 - Penalizan la escritura muy formal o técnica, los textos hechos con fórmulas fijas y los textos muy conocidos que los modelos han memorizado, como citas o leyes.
 - Con menos de unas 200 palabras, la fiabilidad cae mucho.
-- Probado de principio a fin con los modelos por defecto en una GPU de 12 GB (RTX 3080 Ti) compartida con otros programas, con un notebook en español de unos 17.000 tokens y parte de salamandra-2b descargada a RAM. También se ha ejecutado con el par pequeño `qwen2.5-0.5b` en CPU. La carga en 4/8 bits todavía no se ha probado con datos reales. `calibrar` se ha ejecutado con 28 textos humanos en PDF y 15 de IA en `.md`, y salió invertida por la diferencia de formato: de ahí el aviso.
+- Probado de principio a fin con los modelos por defecto en una GPU de 12 GB (RTX 3080 Ti) compartida con otros programas, con un notebook en español de unos 17.000 tokens y parte de salamandra-2b descargada a RAM. También se ha ejecutado con el par pequeño `qwen2.5-0.5b` en CPU. La carga en 4/8 bits todavía no se ha probado con datos reales. `calibrar` se ha ejecutado con 28 textos humanos y 15 de IA (de ChatGPT, Claude y Gemini), en PDF y sin cabeceras, índices ni código. Las 18 señales salieron invertidas, con un AUC de 0,92-0,97 en el documento. En una prueba aparte con 8 textos que no se usaron para calibrar, ningún texto humano pasó del 50 % y se detectaron 2 de los 3 de IA. A nivel de fragmento, el AUC se queda en 0,6-0,7.
 - Las partes que no necesitan modelos tienen tests: `python tests/test_detector.py` (o `python -m pytest tests`).
 
 ## Licencia
