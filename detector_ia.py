@@ -416,8 +416,8 @@ def etiqueta(p):
 
 def senales_invertidas(calib):
     """(modelo, nivel, métrica) cuya dirección calibrada contradice la teoría y que cuentan (peso > 0).
-    Suele indicar que los textos humanos y de IA de la calibración difieren en formato o tipo de texto
-    (PDF con código frente a prosa limpia, p. ej.) y no en quién los escribió."""
+    Puede ser un corpus no comparable (formato o tipo de texto distinto en cada lado) o algo real: con
+    LLM grandes recientes y modelos detectores pequeños, la escritura propia puede ser la más predecible."""
     out = []
     for c, m in (calib or {}).get("modelos", {}).items():
         for nivel in ("doc", "seg"):
@@ -534,11 +534,12 @@ def informe_html(nombre, texto, r, ev, calib, args):
                 avisos.append(f'<div class="aviso">{c} no está en el archivo de calibración: usa umbrales genéricos.</div>')
         inv = [x for x in senales_invertidas(calib) if x[0] in claves]
         if inv:
-            avisos.append(f'<div class="aviso rojo"><b>Calibración sospechosa.</b> {len(inv)} señales calibradas '
-                          'apuntan al revés que la teoría (p. ej. «más predecible = más humano»). Suele pasar cuando los '
-                          'textos humanos y de IA de la calibración difieren en formato o tipo de texto (PDF técnico '
-                          'frente a prosa limpia) y la calibración aprende esa diferencia, no la autoría. Con esta '
-                          'calibración el resultado no es fiable: recalibra con textos comparables en ambos lados.</div>')
+            avisos.append(f'<div class="aviso"><b>Calibración con dirección invertida.</b> {len(inv)} señales '
+                          'calibradas apuntan al revés que la teoría (p. ej. «más predecible = más humano»). Puede '
+                          'deberse a que los textos humanos y de IA de la calibración no son comparables (formato o tipo '
+                          'de texto distinto), o ser real: con LLM grandes recientes, tu propia escritura puede resultar '
+                          'más predecible para los modelos pequeños del detector. Antes de fiarte, comprueba la '
+                          'calibración con textos que no hayan servido para calibrar.</div>')
 
     if p is None:
         frase = "No hay suficiente texto para analizar."
@@ -873,9 +874,10 @@ def cmd_calibrar(args):
         print(f"\n! AVISO: {len(inv)} métricas con peso salen con la dirección contraria a la teoría:")
         for c, nivel, met in inv:
             print(f"    {c} {nivel} {METRICAS[met]['nombre']}")
-        print("  Seguramente los textos humanos y de IA difieren en formato o tipo (PDF técnico frente a prosa\n"
-              "  limpia, por ejemplo) y la calibración separa eso, no la autoría. Usa textos comparables en ambos\n"
-              "  lados (mismo formato, mismo tipo de texto) y vuelve a calibrar.")
+        print("  Dos causas posibles: los textos humanos y de IA no son comparables (formato o tipo de texto\n"
+              "  distinto en cada lado), o es real y tu escritura es más predecible para estos modelos que la de\n"
+              "  los LLM con los que generaste los textos. Revisa que ambos lados sean comparables y comprueba la\n"
+              "  calibración analizando textos humanos y de IA que no hayas usado para calibrar.")
 
 
 # ----------------------------------------------------------------------------------------
