@@ -58,6 +58,30 @@ def test_senales_invertidas_ignora_metricas_sin_peso():
     assert d.senales_invertidas(calib) == [("m", "doc", "binoculars")]
 
 
+PAGINA = "Andrés Merlo Trujillo\nSeguridad en Sistemas Operativos\n"
+
+
+def test_limpiar_documento_quita_cabeceras_repetidas():
+    texto = "".join(f"{PAGINA}Esta es la frase de prosa número {i} de la página.\n\n" for i in range(3))
+    out = d.limpiar_documento(texto)
+    assert "Merlo" not in out and "Seguridad" not in out
+    assert out.count("Esta es la frase de prosa número") == 3
+
+
+def test_limpiar_documento_quita_indice_codigo_y_lineas_cortas():
+    texto = ("1.2 Introducción . . . . . . . . . . 4\n"
+             "int main() { return 0; }\n"
+             "$ ls -la /tmp\n"
+             "Tabla 3\n"
+             "Aquí explico con calma lo que hace el programa de la práctica.")
+    assert d.limpiar_documento(texto) == "Aquí explico con calma lo que hace el programa de la práctica."
+
+
+def test_limpiar_documento_respeta_parrafos():
+    texto = "Primer párrafo con varias palabras de prosa.\n\nSegundo párrafo con más palabras de prosa."
+    assert d.limpiar_documento(texto) == texto
+
+
 if __name__ == "__main__":
     fallos = 0
     for nombre, f in list(globals().items()):

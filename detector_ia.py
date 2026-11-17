@@ -31,6 +31,7 @@ Formatos: .txt, .md, .pdf, .ipynb (solo celdas markdown) y .docx
 
 import argparse
 import bisect
+import collections
 import datetime as dt
 import gc
 import html
@@ -811,7 +812,28 @@ def limpiar_markdown(texto):
     return texto.strip()
 
 
-def _leer(p):
+_INDICE = re.compile(r"(\.\s?){5,}")  # «Introducción . . . . . 4»
+_LINEA_CODIGO = re.compile(r"[{};=<>]|^\s*(\$ |# |//|def |int |public |return |import |#include)")
+
+
+def limpiar_documento(texto):
+    """Deja solo la prosa de un documento: quita las líneas repetidas 3+ veces (cabeceras y pies de
+    página), las de índice, las que parecen código y las de 3 palabras o menos (celdas de tabla,
+    títulos sueltos). Es un filtro tosco, pero igual para todos los textos: lo que importa es aplicar
+    el mismo al calibrar y al analizar, para que humanos e IA se comparen en igualdad."""
+    lineas = texto.split("\n")
+    cnt = collections.Counter(l.strip() for l in lineas if l.strip())
+    out = []
+    for linea in lineas:
+        s = linea.strip()
+        if not s:
+            out.append("")
+        elif not (cnt[s] >= 3 or _INDICE.search(s) or _LINEA_CODIGO.search(s) or len(s.split()) <= 3):
+            out.append(s)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
+def _leer(p, limpiar=False):
     p = Path(p)
     ext = p.suffix.lower()
     try:
@@ -827,6 +849,8 @@ def _leer(p):
         sys.exit(f"No he podido leer {p}: {e}")
     if ext in (".md", ".ipynb"):
         texto = limpiar_markdown(texto)
+    if limpiar:
+        texto = limpiar_documento(texto)
     if not texto.strip():
         pista = " ¿Es un PDF escaneado? Necesitaría OCR." if ext == ".pdf" else ""
         sys.exit(f"{p} no contiene texto que analizar.{pista}")
@@ -843,12 +867,13 @@ def cmd_calibrar(args):
         sys.exit(f"Necesito al menos 5 textos en cada carpeta (hay {len(hum)} humanos y {len(ia)} de IA). "
                  f"Lo recomendable son 20+ de cada.")
     claves = [c.strip() for c in args.modelos.split(",") if c.strip()]
-    textos = [_leer(p) for p in hum + ia]
+    textos = [_leer(p, args.limpiar) for p in hum + ia]
     y = [0] * len(hum) + [1] * len(ia)
     res = analizar_textos(textos, claves, args)
 
     calib = {"version": 1, "creado": dt.datetime.now().isoformat(timespec="seconds"),
-             "n_humanos": len(hum), "n_ia": len(ia), "min_palabras": args.min_palabras, "modelos": {}}
+             "n_humanos": len(hum), "n_ia": len(ia), "min_palabras": args.min_palabras,
+             "limpiar": args.limpiar, "modelos": {}}
     print("\nResultados de calibración (AUC: 0,5 = azar, 1 = separación perfecta)")
     print(f"{'modelo':<16}{'nivel':<6}{'métrica':<16}{'AUC':>6}{'umbral':>10}{'TPR':>7}{'FPR':>7}")
     for c in claves:
@@ -890,6 +915,10 @@ def cmd_analizar(args):
         if calib.get("min_palabras") and calib["min_palabras"] != args.min_palabras:
             print(f"! La calibración usó --min-palabras {calib['min_palabras']}; uso ese valor.")
             args.min_palabras = calib["min_palabras"]
+        if "limpiar" in calib and calib["limpiar"] != args.limpiar:
+            print(f"! La calibración se hizo {'con' if calib['limpiar'] else 'sin'} --limpiar; "
+                  f"analizo igual para que sea comparable.")
+            args.limpiar = calib["limpiar"]
     if args.pdf:
         try:
             import weasyprint  # noqa: F401
@@ -897,7 +926,7 @@ def cmd_analizar(args):
             sys.exit(f"Para --pdf necesito WeasyPrint (pip install weasyprint) y sus librerías del sistema: {e}")
     claves = [c.strip() for c in args.modelos.split(",") if c.strip()]
     rutas = [Path(p) for p in args.archivos]
-    textos = [_leer(p) for p in rutas]
+    textos = [_leer(p, args.limpiar) for p in rutas]
     res = analizar_textos(textos, claves, args)
 
     salida = Path(args.salida)
@@ -944,6 +973,8 @@ def main():
         p.add_argument("--modelos", default=DEFAULT_MODELOS, help=f"lista separada por comas (def.: {DEFAULT_MODELOS})")
         p.add_argument("--quant", default="auto", choices=["auto", "none", "8bit", "4bit"],
                        help="auto = 4 bits para modelos ≥3B, sin cuantizar los pequeños")
+        p.add_argument("--limpiar", action="store_true",
+                       help="quita cabeceras y pies repetidos, índices, código y líneas sueltas cortas")
         p.add_argument("--min-palabras", type=int, default=50, help="tamaño mínimo de cada fragmento (def.: 50)")
         p.add_argument("--ventana", type=int, default=384, help="tokens por pasada; bájalo si te quedas sin VRAM")
         p.add_argument("--max-ram", type=float, default=None, metavar="GiB",

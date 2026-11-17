@@ -79,6 +79,7 @@ La primera vez se descargan de Hugging Face todos los modelos que uses. Con los 
 |---|---|---|---|
 | `--modelos` | analizar, calibrar | `qwen2.5-1.5b,qwen3-1.7b,salamandra-2b` | Lista de modelos o pares propios, separados por comas |
 | `--quant` | analizar, calibrar | `auto` | `auto`, `none`, `8bit` o `4bit`. Con `auto`, los modelos de 3B o más se cargan en 4 bits. |
+| `--limpiar` | analizar, calibrar | no | Quita cabeceras y pies repetidos, índices, código y líneas de 3 palabras o menos. La calibración guarda si se usó, y `analizar` hace lo mismo. |
 | `--min-palabras` | analizar, calibrar | `50` | Tamaño mínimo de cada fragmento, en palabras |
 | `--ventana` | analizar, calibrar | `384` | Tokens por pasada. Bájalo a 256 si te quedas sin VRAM. |
 | `--max-ram` | analizar, calibrar | 40 % de la RAM disponible | GiB de RAM para los pesos que no quepan en la GPU. Lo que sobre va a disco. |
@@ -118,7 +119,7 @@ Sin calibrar, los umbrales son genéricos y el informe lo avisa en rojo. Calibra
 
 1. Mete en `humanos/` 20 o más textos escritos por **ti**, mejor de antes de 2023, en cualquiera de los [formatos admitidos](#archivos-admitidos). El mínimo son 5.
 2. Mete en `ia/` otros 20 o más generados con ChatGPT, Claude, Gemini o similares, sobre temas parecidos.
-   **Usa el mismo formato y el mismo tipo de texto en los dos lados.** Si los humanos son PDF técnicos con código y los de IA son prosa limpia en `.md`, la calibración aprende a separar formatos, no autores.
+   **Usa el mismo formato y el mismo tipo de texto en los dos lados.** Con PDF, añade `--limpiar` para que las cabeceras, los índices y el código no pesen. Si los humanos son PDF técnicos con código y los de IA son prosa limpia en `.md`, la calibración aprende a separar formatos, no autores.
 3. Ejecuta:
 
 ```bash
