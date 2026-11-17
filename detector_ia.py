@@ -414,18 +414,32 @@ def etiqueta(p):
     return "alta" if p >= 0.65 else "media" if p >= 0.4 else "baja"
 
 
+def senales_invertidas(calib):
+    """(modelo, nivel, métrica) cuya dirección calibrada contradice la teoría y que cuentan (peso > 0).
+    Suele indicar que los textos humanos y de IA de la calibración difieren en formato o tipo de texto
+    (PDF con código frente a prosa limpia, p. ej.) y no en quién los escribió."""
+    out = []
+    for c, m in (calib or {}).get("modelos", {}).items():
+        for nivel in ("doc", "seg"):
+            for met, cfg in m.get(nivel, {}).items():
+                if met in METRICAS and cfg.get("peso", 0) > 0 and cfg.get("dir") != METRICAS[met]["dir"]:
+                    out.append((c, nivel, met))
+    return out
+
+
 def explicar(s):
-    v, t, met, c = s["valor"], s["cfg"]["t"], s["met"], s["clave"]
-    if met == "top10":
-        return (f"<b>{c}</b>: el {v:.0%} de los tokens estaban entre los 10 más probables "
-                f"para el modelo (umbral {t:.0%})")
-    if met == "binoculars":
-        lado = "por debajo" if v < t else "por encima"
-        return (f"<b>{c}</b>: Binoculars {v:.3f}, {lado} del umbral {t:.3f} "
-                f"(cuanto más bajo, menos «sorprende» el texto a los modelos)")
+    v, cfg, met, c = s["valor"], s["cfg"], s["met"], s["clave"]
+    t = cfg["t"]
     lado = "por encima" if v > t else "por debajo"
-    return (f"<b>{c}</b>: Fast-DetectGPT {v:.2f}, {lado} del umbral {t:.2f} "
-            f"(palabras más probables de lo esperable al escribir con naturalidad)")
+    regla = "más alto = más «IA»" if cfg["dir"] > 0 else "más bajo = más «IA»"
+    if cfg["dir"] != METRICAS[met]["dir"]:
+        regla += ", dirección invertida respecto a la teoría por la calibración"
+    if met == "top10":
+        return (f"<b>{c}</b>: GLTR top-10 {v:.0%} de los tokens entre los 10 más probables, "
+                f"{lado} del umbral {t:.0%} ({regla})")
+    if met == "binoculars":
+        return f"<b>{c}</b>: Binoculars {v:.3f}, {lado} del umbral {t:.3f} ({regla})"
+    return f"<b>{c}</b>: Fast-DetectGPT {v:.2f}, {lado} del umbral {t:.2f} ({regla})"
 
 
 # ----------------------------------------------------------------------------------------
@@ -518,6 +532,13 @@ def informe_html(nombre, texto, r, ev, calib, args):
                               f'«{qa}». Los umbrales pueden no corresponder.</div>')
             if c not in calib.get("modelos", {}):
                 avisos.append(f'<div class="aviso">{c} no está en el archivo de calibración: usa umbrales genéricos.</div>')
+        inv = [x for x in senales_invertidas(calib) if x[0] in claves]
+        if inv:
+            avisos.append(f'<div class="aviso rojo"><b>Calibración sospechosa.</b> {len(inv)} señales calibradas '
+                          'apuntan al revés que la teoría (p. ej. «más predecible = más humano»). Suele pasar cuando los '
+                          'textos humanos y de IA de la calibración difieren en formato o tipo de texto (PDF técnico '
+                          'frente a prosa limpia) y la calibración aprende esa diferencia, no la autoría. Con esta '
+                          'calibración el resultado no es fiable: recalibra con textos comparables en ambos lados.</div>')
 
     if p is None:
         frase = "No hay suficiente texto para analizar."
@@ -601,7 +622,8 @@ Modelos: {_esc(modelos_txt)}<br>Calibración: {'sí — ' + _esc(args.calibracio
 
 <h2>Señales por modelo (documento completo)</h2>
 {tabla}
-<p class="sub">Binoculars: más bajo = más «IA». Fast-DetectGPT y GLTR top-10: más alto = más «IA».
+<p class="sub">En teoría, Binoculars: más bajo = más «IA»; Fast-DetectGPT y GLTR top-10: más alto = más «IA».
+Con calibración manda la dirección aprendida, que se indica en cada fragmento.
 El color de cada celda indica hacia qué lado cae respecto a su umbral.</p>
 
 <h2>Fragmentos más sospechosos</h2>
@@ -743,12 +765,14 @@ def _leer_docx(p):
     return "\n\n".join(t.strip() for t in parrafos if t.strip())
 
 
+_MD_BLOQUE = re.compile(r"^[ \t]*(```|~~~).*?^[ \t]*\1[^\n]*$", re.M | re.S)  # bloques de código
+_MD_CODIGO = re.compile(r"`([^`\n]+)`")                                      # `código en línea`
+_MD_HUECO = re.compile("\ue000(\\d+)\ue001")  # marcador del código en línea apartado
 _MD = [  # (patrón, reemplazo), en este orden
-    (re.compile(r"^[ \t]*(```|~~~).*?^[ \t]*\1[^\n]*$", re.M | re.S), ""),  # bloques de código
     (re.compile(r"\$\$.+?\$\$", re.S), ""),                                    # fórmulas en bloque
     (re.compile(r"\$(?=\S)[^$\n]+?(?<=\S)\$"), ""),                            # fórmulas en línea
     (re.compile(r"<!--.*?-->", re.S), ""),                                     # comentarios HTML
-    (re.compile(r"<[^>\n]+>"), ""),                                            # etiquetas HTML
+    (re.compile(r"</?[A-Za-z][^<>\n]*>"), ""),                                  # etiquetas HTML (no «< y >»)
     (re.compile(r"!\[[^\]]*\]\([^)]*\)"), ""),                                 # imágenes
     (re.compile(r"\[([^\]]+)\]\([^)]*\)"), r"\1"),                             # enlaces → su texto
     (re.compile(r"^[ \t]*([-*_])[ \t]*(?:\1[ \t]*){2,}$", re.M), ""),          # líneas horizontales
@@ -760,7 +784,6 @@ _MD = [  # (patrón, reemplazo), en este orden
     (re.compile(r"(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])"), r"\1"),    # *cursiva*
     (re.compile(r"(?<!\w)_(?=\S)([^_\n]+?)(?<=\S)_(?!\w)"), r"\1"),            # _cursiva_
     (re.compile(r"~~(.+?)~~"), r"\1"),                                         # ~~tachado~~
-    (re.compile(r"`([^`\n]+)`"), r"\1"),                                       # `código en línea` → su texto
     (re.compile(r"[ \t]*\|[ \t]*"), " "),                                      # celdas de tabla
     (re.compile(r"[ \t]{2,}"), " "),                                           # espacios sobrantes
     (re.compile(r"^[ \t]+|[ \t]+$", re.M), ""),
@@ -771,8 +794,19 @@ _MD = [  # (patrón, reemplazo), en este orden
 def limpiar_markdown(texto):
     """Quita la sintaxis de markdown y deja solo la prosa. Las marcas (#, **, viñetas…) son muy
     predecibles para los modelos e inflan las métricas; el código y las fórmulas no son prosa."""
+    texto = _MD_BLOQUE.sub("", texto)
+    # El código en línea se aparta antes de quitar etiquetas HTML: si no, «`<br />`» o «entre `<` y `>`»
+    # se borran y quedan frases cortadas. Al final se repone su texto, sin las comillas invertidas.
+    codigo = []
+
+    def apartar(m):
+        codigo.append(m.group(1))
+        return f"\ue000{len(codigo) - 1}\ue001"
+
+    texto = _MD_CODIGO.sub(apartar, texto)
     for patron, rep in _MD:
         texto = patron.sub(rep, texto)
+    texto = _MD_HUECO.sub(lambda m: codigo[int(m.group(1))], texto)
     return texto.strip()
 
 
@@ -834,6 +868,14 @@ def cmd_calibrar(args):
                       f"{fmt_valor(met, cfg['t']):>10}{cfg['tpr']:>7.0%}{cfg['fpr']:>7.0%}")
     Path(args.salida).write_text(json.dumps(calib, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"\nGuardado en {args.salida}. Las métricas con AUC < 0,55 no cuentan en la sospecha.")
+    inv = senales_invertidas(calib)
+    if inv:
+        print(f"\n! AVISO: {len(inv)} métricas con peso salen con la dirección contraria a la teoría:")
+        for c, nivel, met in inv:
+            print(f"    {c} {nivel} {METRICAS[met]['nombre']}")
+        print("  Seguramente los textos humanos y de IA difieren en formato o tipo (PDF técnico frente a prosa\n"
+              "  limpia, por ejemplo) y la calibración separa eso, no la autoría. Usa textos comparables en ambos\n"
+              "  lados (mismo formato, mismo tipo de texto) y vuelve a calibrar.")
 
 
 # ----------------------------------------------------------------------------------------
